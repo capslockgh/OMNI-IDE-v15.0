@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omni-Polyglot 五語智能整合環境</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/editor/editor.main.min.css">
+    <style>
+        /* 上下拖曳把手樣式 */
+        .resizer-v {
+            height: 4px;
+            cursor: row-resize;
+            background-color: #1f2937; /* border-gray-800 */
+            transition: background-color 0.2s;
+            z-index: 20;
+        }
+        .resizer-v:hover, .resizer-v.resizing {
+            background-color: #3b82f6; /* bg-blue-500 */
+        }
+
+        /* 🚀 新增：左右拖曳把手樣式 */
+        .resizer-h {
+            width: 4px;
+            cursor: col-resize;
+            background-color: #1f2937;
+            transition: background-color 0.2s;
+            z-index: 30;
+        }
+        .resizer-h:hover, .resizer-h.resizing {
+            background-color: #f97316; /* 橘色醒目提示左右拖曳 */
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 h-screen flex flex-col font-sans overflow-hidden">
+
+    <header class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex justify-between items-center shadow-lg z-10">
+        <div class="flex items-center space-x-4">
+            <div class="flex space-x-1.5">
+                <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+            </div>
+            <span class="text-xs font-bold tracking-wider text-gray-400 pl-2 border-l border-gray-700">🚀 OMNI-IDE v15.0 (全維度邊界自由拖曳版)</span>
+        </div>
+    </header>
+
+    <div class="bg-gray-900 border-b border-gray-800 px-4 flex space-x-2 text-xs">
+        <button onclick="switchLanguage('rust')" id="tab-rust" class="px-4 py-2 bg-gray-800 border-b-2 border-orange-500 text-gray-100 font-semibold">Rust</button>
+        <button onclick="switchLanguage('c')" id="tab-c" class="px-4 py-2 bg-gray-900 text-gray-400 hover:text-gray-200">C 語言</button>
+        <button onclick="switchLanguage('cpp')" id="tab-cpp" class="px-4 py-2 bg-gray-900 text-gray-400 hover:text-gray-200">C++</button>
+        <button onclick="switchLanguage('csharp')" id="tab-csharp" class="px-4 py-2 bg-gray-900 text-gray-400 hover:text-gray-200">C#</button>
+        <button onclick="switchLanguage('python')" id="tab-python" class="px-4 py-2 bg-gray-900 text-gray-400 hover:text-gray-200">Python</button>
+    </div>
+
+    <main id="main-container" class="flex-1 flex flex-row overflow-hidden select-none">
+        
+        <div id="left-panel" class="h-full flex flex-col bg-[#1e1e1e]" style="width: 50%;">
+            <div id="editor-container" class="flex-1 w-full text-left"></div>
+        </div>
+
+        <div class="resizer-h" id="resizer-center"></div>
+
+        <div id="right-panel" class="h-full flex flex-col bg-black" style="width: 50%;">
+            
+            <div id="pane-ram" class="flex flex-col" style="height: 20%;">
+                <div class="bg-gray-900 px-4 py-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                    共享變數暫存器 (Shared Heap Monitor)
+                </div>
+                <div id="ram-monitor" class="flex-1 bg-gray-950 p-2.5 font-mono text-xs text-green-400 overflow-y-auto leading-relaxed select-text"></div>
+            </div>
+
+            <div class="resizer-v" id="resizer-1"></div>
+
+            <div id="pane-bug" class="flex flex-col bg-slate-950" style="height: 25%;">
+                <div class="bg-red-950/40 px-4 py-1.5 text-[11px] font-semibold text-red-400 uppercase tracking-wider border-b border-red-900/40 flex justify-between items-center">
+                    <span>⚠️ BUG 提示與即時診斷單元 (Diagnostic Panel)</span>
+                    <span id="bug-count" class="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">0</span>
+                </div>
+                <div id="bug-panel" class="flex-1 p-3 font-mono text-xs text-red-300 overflow-y-auto space-y-1 bg-red-950/10 select-text">
+                    <div class="text-green-400/70">✨ 語法安全：目前沒有偵測到任何 Bug。</div>
+                </div>
+            </div>
+
+            <div class="resizer-v" id="resizer-2"></div>
+
+            <div id="pane-terminal" class="flex-1 flex flex-col min-h-[100px]">
+                <div class="bg-gray-900 px-4 py-1.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-800 flex justify-between items-center">
+                    <span>綜合終端機控制台 (System Output)</span>
+                    <button id="clear-btn" class="text-gray-600 hover:text-gray-400 text-[10px] font-mono">CLEAR</button>
+                </div>
+                <pre id="terminal" class="flex-1 p-4 font-mono text-xs text-gray-300 overflow-y-auto whitespace-pre-wrap bg-black leading-6 select-text">載入完成。</pre>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
+
+    <script>
+        const BackendStorage = {
+            rust: `fn main() {\n    println!("--- Rust 內核自動啟動 ---");\n    let global_counter = 10;\n    println!("Rust: 初始化變數 = {}", global_counter);\n}`,
+            c: `#include <stdio.h>\nint main() {\n    printf("--- C 語言內核接力 ---\\n");\n    global_counter = global_counter + 40;\n    printf("C語言: 執行累加後 = %d\\n", global_counter);\n    return 0;\n}`,
+            cpp: `#include <iostream>\nint cpp_entry() {\n    std::cout << "--- C++ 內核接力 ---" << std::endl;\n    global_counter = global_counter * 2;\n    std::cout << "C++: 執行翻倍後 = " << global_counter << std::endl;\n}`,
+            csharp: `using System;\nclass Program {\n    static void Main() {\n        Console.WriteLine("--- C# 內核接力 ---");\n        global_counter = global_counter - 15;\n        Console.WriteLine("C#: 扣減加工後 = " + global_counter);\n    }\n}`,
+            python: `print("--- Python 內核最終收尾 ---")\nprint("Python: 讀取最終數據 =", global_counter)\nfinal_result = global_counter ** 2\nprint("Python: 二次方運算結果 =", final_result)`
+        };
+
+        let currentLang = 'rust';
+        let editor;
+        const terminal = document.getElementById('terminal');
+        const ramMonitor = document.getElementById('ram-monitor');
+        const bugPanel = document.getElementById('bug-panel');
+        const bugCountBadge = document.getElementById('bug-count');
+        const clearBtn = document.getElementById('clear-btn');
+
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+        require(['vs/editor/editor.main'], function() {
+            document.getElementById('editor-container').innerHTML = "";
+            editor = monaco.editor.create(document.getElementById('editor-container'), {
+                value: BackendStorage[currentLang],
+                language: 'rust', 
+                theme: 'vs-dark',
+                fontSize: 13,
+                fontFamily: 'Fira Code, Menlo, Monaco, Consolas, monospace',
+                automaticLayout: true,
+                lineHeight: 20
+            });
+
+            editor.onDidChangeModelContent(() => {
+                BackendStorage[currentLang] = editor.getValue();
+                triggerPipeline();
+            });
+
+            triggerPipeline();
+        });
+
+        // ======= 🚀 核心優化：全維度（左右 + 上下）雙重拖曳引擎 =======
+        function initAllResizers() {
+            // A. 處理內部上下拖曳 (Vertical Resizing)
+            const setupVerticalDrag = (resizerId, targetPaneId) => {
+                const resizer = document.getElementById(resizerId);
+                const targetPane = document.getElementById(targetPaneId);
+                let startY, startHeight;
+
+                resizer.addEventListener('mousedown', (e) => {
+                    startY = e.clientY;
+                    startHeight = targetPane.getBoundingClientRect().height;
+                    resizer.classList.add('resizing');
+                    document.addEventListener('mousemove', doDrag);
+                    document.addEventListener('mouseup', stopDrag);
+                });
+
+                function doDrag(e) {
+                    const deltaY = e.clientY - startY;
+                    const newHeight = startHeight + deltaY;
+                    if (newHeight > 40 && newHeight < window.innerHeight * 0.8) {
+                        targetPane.style.height = `${newHeight}px`;
+                    }
+                }
+
+                function stopDrag() {
+                    resizer.classList.remove('resizing');
+                    document.removeEventListener('mousemove', doDrag);
+                    document.removeEventListener('mouseup', stopDrag);
+                }
+            };
+
+            // B. 處理中央左右拖曳 (Horizontal Resizing)
+            const setupHorizontalDrag = () => {
+                const resizer = document.getElementById('resizer-center');
+                const leftPanel = document.getElementById('left-panel');
+                const rightPanel = document.getElementById('right-panel');
+                let startX, startLeftWidth, startRightWidth;
+
+                resizer.addEventListener('mousedown', (e) => {
+                    startX = e.clientX;
+                    startLeftWidth = leftPanel.getBoundingClientRect().width;
+                    startRightWidth = rightPanel.getBoundingClientRect().width;
+                    resizer.classList.add('resizing');
+                    
+                    document.addEventListener('mousemove', doDragH);
+                    document.addEventListener('mouseup', stopDragH);
+                });
+
+                function doDragH(e) {
+                    const deltaX = e.clientX - startX;
+                    const newLeftWidth = startLeftWidth + deltaX;
+                    const newRightWidth = startRightWidth - deltaX;
+                    const totalWidth = startLeftWidth + startRightWidth;
+
+                    // 將計算結果轉換成百分比，完美適應不同螢幕解析度
+                    const leftPercent = (newLeftWidth / totalWidth) * 100;
+                    const rightPercent = (newRightWidth / totalWidth) * 100;
+
+                    // 防禦界限：左邊跟右邊都不能小於 20%
+                    if (leftPercent > 20 && leftPercent < 80) {
+                        leftPanel.style.width = `${leftPercent}%`;
+                        rightPanel.style.width = `${rightPercent}%`;
+                        
+                        // ⚡ 關鍵：拖曳時，必須即時通知 Monaco Editor 重新校正寬度，畫面才不會卡死
+                        if (editor) {
+                            editor.layout();
+                        }
+                    }
+                }
+
+                function stopDragH() {
+                    resizer.classList.remove('resizing');
+                    document.removeEventListener('mousemove', doDragH);
+                    document.removeEventListener('mouseup', stopDragH);
+                    // 釋放滑鼠時再做最後一次精準校正
+                    if (editor) editor.layout();
+                }
+            };
+
+            // 啟動所有把手
+            setupVerticalDrag('resizer-1', 'pane-ram');
+            setupVerticalDrag('resizer-2', 'pane-bug');
+            setupHorizontalDrag();
+        }
+
+        // 初始化全佈局拖曳
+        initAllResizers();
+
+        function switchLanguage(lang) {
+            if (!editor) return;
+            BackendStorage[currentLang] = editor.getValue();
+            currentLang = lang;
+            
+            editor.setValue(BackendStorage[lang]);
+            let monacoLang = lang === 'c' || lang === 'cpp' ? 'cpp' : (lang === 'csharp' ? 'csharp' : (lang === 'python' ? 'python' : 'rust'));
+            monaco.editor.setModelLanguage(editor.getModel(), monacoLang);
+
+            ['rust', 'c', 'cpp', 'csharp', 'python'].forEach(l => {
+                const btn = document.getElementById(`tab-${l}`);
+                btn.className = l === lang ? "px-4 py-2 bg-gray-800 border-b-2 border-orange-500 text-gray-100 font-semibold" : "px-4 py-2 bg-gray-900 text-gray-400 hover:text-gray-200";
+            });
+        }
+
+        clearBtn.addEventListener('click', () => { terminal.textContent = ''; });
+
+        function triggerPipeline() {
+            let globalRAM = {}; let log = ""; let errors = [];
+            const stdout = (msg) => { log += msg + "\n"; };
+            const reportError = (langName, lineNum, message, severity="Error") => {
+                errors.push({ lang: langName, line: lineNum, msg: message, type: severity });
+            };
+
+            execRust(BackendStorage.rust, globalRAM, stdout, reportError);
+            execC(BackendStorage.c, globalRAM, stdout, reportError);
+            execCpp(BackendStorage.cpp, globalRAM, stdout, reportError);
+            execCsharp(BackendStorage.csharp, globalRAM, stdout, reportError);
+            execPython(BackendStorage.python, globalRAM, stdout, reportError);
+
+            terminal.textContent = log;
+            ramMonitor.textContent = JSON.stringify(globalRAM, null, 4);
+            updateBugPanel(errors);
+        }
+
+        function updateBugPanel(errors) {
+            bugCountBadge.textContent = errors.length;
+            if (errors.length === 0) {
+                bugPanel.innerHTML = `<div class="text-green-400/80 font-semibold">✨ 語法防護完美：目前所有語言均未偵測到任何 Bug。</div>`;
+                bugCountBadge.className = "bg-green-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold";
+                return;
+            }
+            bugCountBadge.className = "bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold";
+            bugPanel.innerHTML = errors.map(err => {
+                return `<div class="border-l-2 border-red-500 pl-2 py-0.5 bg-red-950/20">
+                    <span class="text-red-400 font-bold">[${err.lang.toUpperCase()} ${err.type}]</span> <span class="text-gray-400">第 ${err.line} 行:</span> <span class="text-red-200">${err.msg}</span>
+                </div>`;
+            }).join('');
+        }
+
+        // ======= 核心直譯群（維持穩定運作） =======
+        function execRust(code, ram, stdout, errReport) {
+            let lines = code.split('\n'); if (!code.includes('{') || !code.includes('}')) errReport('Rust', '全域', '主函式結構損毀，缺少大括號 `{}` 邊界。', 'Critical');
+            lines.forEach((l, idx) => {
+                let line = l.trim(); if (!line || line.startsWith('//') || line.startsWith('fn') || line === '}') return;
+                if (line.startsWith('print!') && !line.startsWith('println!')) errReport('Rust', idx+1, '偵測到拼寫錯誤，應使用 `println!` 巨集。');
+                if (line.startsWith('let ')) {
+                    if (!line.endsWith(';')) errReport('Rust', idx+1, '陳述句結尾缺少分號 `;`。');
+                    let expr = line.replace('let mut ', '').replace('let ', '').replace(';', '').trim();
+                    let [k, v] = expr.split('=').map(s => s.trim());
+                    if(k && v) ram[k] = evalToken(v, ram, 'Rust', idx+1, errReport);
+                } else if (line.startsWith('println!')) {
+                    if (!line.endsWith(';')) errReport('Rust', idx+1, '巨集呼交結尾缺少分號 `;`。');
+                    let m = line.match(/println!\s*\(\s*"(.*?)"\s*,\s*(.*?)\)/);
+                    if (m) { let varName = m[2].trim(); if (ram[varName] === undefined) errReport('Rust', idx+1, `嘗試列印未定義的變數 \`${varName}\`。`); stdout(m[1].replace('{}', ram[varName] || '')); }
+                }
+            });
+        }
+
+        function execC(code, ram, stdout, errReport) {
+            let lines = code.split('\n');
+            lines.forEach((l, idx) => {
+                let line = l.trim(); if (!line || line.startsWith('#') || line.startsWith('int main') || line === '}' || line.startsWith('return')) return;
+                if (line.startsWith('printf(')) {
+                    if (!line.endsWith(';')) errReport('C語言', idx+1, '語句缺少結尾分號 `;`。');
+                    let m = line.match(/printf\s*\(\s*"(.*?)"\s*,\s*(.*?)\)/);
+                    if (m) { let varName = m[2].replace(';', '').trim(); if (ram[varName] === undefined) errReport('C語言', idx+1, `使用了未初始化的全域暫存變數 \`${varName}\`。`); stdout(m[1].replace('\\n', '').replace('%d', ram[varName] || 0)); }
+                } else if (line.includes('=') && !line.includes('==')) {
+                    if (!line.endsWith(';')) errReport('C語言', idx+1, '賦值語句結尾缺少分號 `;`。');
+                    let [k, v] = line.replace(';', '').split('=').map(s => s.trim()); if (k && v) ram[k] = evalToken(v, ram, 'C語言', idx+1, errReport);
+                }
+            });
+        }
+
+        function execCpp(code, ram, stdout, errReport) {
+            let lines = code.split('\n');
+            lines.forEach((l, idx) => {
+                let line = l.trim(); if (!line || line.startsWith('#') || line.startsWith('int cpp_entry') || line === '}') return;
+                if (line.startsWith('std::cout')) {
+                    if (!line.endsWith(';')) errReport('C++', idx+1, '輸出流陳述句缺少分號 `;`。');
+                    let textMatch = line.match(/"(.*?)"/); let text = textMatch ? textMatch[1] : '';
+                    let varMatch = line.split('<<').map(s => s.trim()); let targetVar = varMatch[2] ? varMatch[2].replace('std::endl', '').replace(';', '').trim() : '';
+                    if (targetVar && ram[targetVar] === undefined) errReport('C++', idx+1, `找不到流導向目標變數 \`${targetVar}\`。`); stdout(text + (ram[targetVar] !== undefined ? ram[targetVar] : ''));
+                } else if (line.includes('=')) {
+                    let [k, v] = line.replace(';', '').split('=').map(s => s.trim()); if (k && v) ram[k] = evalToken(v, ram, 'C++', idx+1, errReport);
+                }
+            });
+        }
+
+        function execCsharp(code, ram, stdout, errReport) {
+            let lines = code.split('\n');
+            lines.forEach((l, idx) => {
+                let line = l.trim(); if (!line || line.startsWith('using') || line.startsWith('class') || line.includes('Main') || line === '}') return;
+                if (line.startsWith('Console.WriteLine(')) {
+                    if (!line.endsWith(';')) errReport('C#', idx+1, '方法呼叫缺少分號 `;`。');
+                    let m = line.match(/Console\.WriteLine\s*\(\s*"(.*?)"\s*\+\s*(.*?)\)/);
+                    if (m) { let varName = m[2].replace(')', '').replace(';', '').trim(); if (ram[varName] === undefined) errReport('C#', idx+1, `字串拼接時參考了未知的欄位 \`${varName}\`。`); stdout(m[1] + (ram[varName] !== undefined ? ram[varName] : '')); }
+                } else if (line.includes('=') && !line.includes('==')) {
+                    let [k, v] = line.replace(';', '').split('=').map(s => s.trim()); if (k && v) ram[k] = evalToken(v, ram, 'C#', idx+1, errReport);
+                }
+            });
+        }
+
+        function execPython(code, ram, stdout, errReport) {
+            let lines = code.split('\n');
+            lines.forEach((l, idx) => {
+                let line = l.trim(); if (!line || line.startsWith('#')) return;
+                if (line.endsWith(';')) errReport('Python', idx+1, '不建議在 Python 結尾加上分號 `;`。', 'Warning');
+                if (line.startsWith('print(')) {
+                    if (!line.endsWith(')')) errReport('Python', idx+1, '函式呼叫括號未閉合 `)`。');
+                    let m = line.match(/print\s*\(\s*(.*?)\s*\)/);
+                    if (m) {
+                        let args = m[1].split(',').map(s => s.trim());
+                        let out = args.map(arg => {
+                            if (arg.startsWith('"') && arg.endsWith('"')) return arg.replace(/"/g, '');
+                            if (ram[arg] === undefined && isNaN(arg) && !arg.includes('**') && !arg.includes('+')) errReport('Python', idx+1, `未定義的 NameError: name \`${arg}\` is not defined。`);
+                            return ram[arg] !== undefined ? ram[arg] : evalToken(arg, ram, 'Python', idx+1, errReport);
+                        }).join(' '); stdout(out);
+                    }
+                } else if (line.includes('=') && !line.includes('==')) {
+                    let [k, v] = line.split('=').map(s => s.trim()); if (k && v) ram[k] = evalToken(v, ram, 'Python', idx+1, errReport);
+                }
+            });
+        }
+
+        function evalToken(expr, ram, lang, lineNum, errReport) {
+            if(!expr) return 0;
+            let cleanExpr = expr.replace(/\*\*/g, '^').replace(';', '').trim();
+            let tokens = cleanExpr.split(/(\s+|\+|-|\*|\/|\^)/);
+            tokens.forEach(t => {
+                let token = t.trim(); if (token && isNaN(token) && !['+', '-', '*', '/', '^', '(', ')'].includes(token)) {
+                    if (ram[token] === undefined) errReport(lang, lineNum, `參考了尚未被初始化的暫存變數 \`${token}\`。`);
+                }
+            });
+            let resolved = tokens.map(t => ram[t.trim()] !== undefined ? ram[t.trim()] : t);
+            let finalStr = resolved.join('');
+            if (finalStr.includes('^')) { let [base, pow] = finalStr.split('^').map(Number); return Math.pow(base, pow); }
+            try { return Function(`"use strict"; return (${finalStr})`)(); } catch { return expr.replace(/['"]/g, '').trim(); }
+        }
+    </script>
+</body>
+</html>
